@@ -1,0 +1,37 @@
+name: Android APK
+on:
+  push:
+    branches: [main]
+    paths: ['index.html', 'android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Keystore
+        run: echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/ks.p12"
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+      - name: Build
+        working-directory: android
+        run: gradle --no-daemon assembleRelease
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/ks.p12
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+      - name: Publish
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk inventario-colour-code.apk
+          gh release view apk >/dev/null 2>&1 || gh release create apk --title "Inventario Colour Code (APK)" --notes "Instalador Android da app de inventario. Atualizado a cada alteracao."
+          gh release upload apk inventario-colour-code.apk --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
