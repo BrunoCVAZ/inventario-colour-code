@@ -151,7 +151,8 @@ const T = {
     back: "Voltar", print: "Imprimir", current: "Já contado: ", notCounted: "Ainda não contado", total: "total ",
     removed: " removido", exported: "Exportado: ", search: "Procurar (ex.: YRW)", noStorage: "Atenção: este browser não está a guardar os dados. Exporte antes de fechar.",
     csvCode: "Colour Code", csvQty: "Quantidade", csvLast: "Ultima leitura", csvWhen: "Data/hora", csvOp: "Operacao",
-    opAdd: "somar", opSet: "substituir", opRemove: "remover", fileInv: "inventario-colour-code", fileLog: "leituras-colour-code"
+    opAdd: "somar", opSet: "substituir", opRemove: "remover", fileInv: "inventario-colour-code", fileLog: "leituras-colour-code",
+    exportFail: "Não foi possível gravar o ficheiro."
   },
   en: {
     title: "Colour Code Inventory", scanHint: "Scan barcode…", ready: "Ready. Scan a barcode.",
@@ -163,7 +164,8 @@ const T = {
     back: "Back", print: "Print", current: "Already counted: ", notCounted: "Not counted yet", total: "total ",
     removed: " removed", exported: "Exported: ", search: "Search (e.g. YRW)", noStorage: "Warning: this browser is not saving the data. Export before closing.",
     csvCode: "Colour Code", csvQty: "Quantity", csvLast: "Last scan", csvWhen: "Date/time", csvOp: "Operation",
-    opAdd: "add", opSet: "replace", opRemove: "remove", fileInv: "colour-code-inventory", fileLog: "colour-code-scans"
+    opAdd: "add", opSet: "replace", opRemove: "remove", fileInv: "colour-code-inventory", fileLog: "colour-code-scans",
+    exportFail: "Could not save the file."
   }
 };
 
@@ -349,6 +351,12 @@ function download(name, rows) {
   // ; e BOM para abrir diretamente no Excel em português
   const csv = "﻿" + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";")).join("\r\n") + "\r\n";
   const file = name + "-" + stamp(new Date()).replace(/[: ]/g, "").replace(/-/g, "") + ".csv";
+  if (window.Android && Android.saveFile) {
+    // app Android: grava na pasta Download do equipamento
+    const where = Android.saveFile(file, csv);
+    if (where) msg(t("exported") + where, "ok"); else msg(t("exportFail"), "err");
+    return;
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   a.download = file;
@@ -426,6 +434,7 @@ $("lPrint").addEventListener("click", () => window.print());
 load();
 save();
 render();
+if (window.Android) $("bLabels").hidden = true;
 msg(t("ready"));
 focusScan();
 </script>

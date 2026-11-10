@@ -1,0 +1,61 @@
+plugins {
+    id 'com.android.application'
+}
+
+def runNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+def webAssets = new File(buildDir, 'webassets')
+
+android {
+    namespace 'pt.camac.inventariocc'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'pt.camac.inventariocc'
+        minSdk 24
+        targetSdk 34
+        versionCode runNumber
+        versionName "1.0.${runNumber}"
+    }
+
+    signingConfigs {
+        release {
+            // a mesma chave em todas as compilações, para as atualizações não apagarem a contagem
+            def ks = System.getenv('KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storeType 'pkcs12'
+                storePassword System.getenv('KEYSTORE_PASS')
+                keyAlias 'inventario'
+                keyPassword System.getenv('KEYSTORE_PASS')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    // a página é a mesma do site: index.html na raiz do repositório
+    sourceSets {
+        main { assets.srcDirs += webAssets }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+tasks.register('copyWeb', Copy) {
+    from rootProject.file('../index.html')
+    into webAssets
+}
+preBuild.dependsOn copyWeb
