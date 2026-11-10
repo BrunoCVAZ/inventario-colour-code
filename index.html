@@ -56,6 +56,10 @@
   #pList button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: #fff; margin-bottom: 6px; }
   #pList .done { margin-left: auto; color: #0e4a1a; }
 
+  #odHint, #odWait { margin: 10px 0; font-size: 17px; }
+  #odUrl { font-size: 20px; font-weight: 700; color: #0b5cad; word-break: break-all; }
+  #odCode { font-size: 40px; font-weight: 700; letter-spacing: 3px; text-align: center; background: #fff; border: 2px solid #0b5cad; border-radius: 8px; padding: 14px; margin: 12px 0; }
+
   #labels { background: #fff; padding: 10mm; }
   #labelBar { display: flex; gap: 8px; margin-bottom: 8mm; }
   #labelGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
@@ -95,6 +99,7 @@
   <div id="empty" data-t="empty"></div>
   <ul id="list"></ul>
   <h2 data-t="other"></h2>
+  <div class="row"><button id="bOd" type="button" hidden></button></div>
   <div class="row">
     <button id="bLabels" type="button" data-t="labels"></button>
     <button id="bNew" type="button" class="danger"></button>
@@ -121,6 +126,16 @@
     <div class="row"><button id="pClose" type="button" data-t="back"></button></div>
     <input id="pSearch" autocomplete="off" autocapitalize="characters" spellcheck="false">
     <div id="pList"></div>
+  </div>
+</div>
+
+<div id="od" class="overlay" hidden>
+  <div class="panel">
+    <div id="odHint" data-t="odHint"></div>
+    <div id="odUrl"></div>
+    <div id="odCode"></div>
+    <div id="odWait" data-t="odWait"></div>
+    <div class="row"><button id="odCancel" type="button" data-t="cancel"></button></div>
   </div>
 </div>
 
@@ -152,7 +167,11 @@ const T = {
     removed: " removido", exported: "Exportado: ", search: "Procurar (ex.: YRW)", noStorage: "Atenção: este browser não está a guardar os dados. Exporte antes de fechar.",
     csvCode: "Colour Code", csvQty: "Quantidade", csvLast: "Ultima leitura", csvWhen: "Data/hora", csvOp: "Operacao",
     opAdd: "somar", opSet: "substituir", opRemove: "remover", fileInv: "inventario-colour-code", fileLog: "leituras-colour-code",
-    exportFail: "Não foi possível gravar o ficheiro."
+    exportFail: "Não foi possível gravar o ficheiro.",
+    odIn: "OneDrive: iniciar sessão", odOut: "OneDrive: ligado", odOutConfirm: "Tocar de novo para terminar a sessão OneDrive",
+    odHint: "Num PC ou telemóvel, abra este endereço e escreva o código:", odWait: "A aguardar o início de sessão…",
+    odSigned: "OneDrive ligado.", odSignedOut: "Sessão OneDrive terminada.", odSending: "A enviar para o OneDrive…",
+    odSent: "Enviado: ", odError: "OneDrive: "
   },
   en: {
     title: "Colour Code Inventory", scanHint: "Scan barcode…", ready: "Ready. Scan a barcode.",
@@ -165,7 +184,11 @@ const T = {
     removed: " removed", exported: "Exported: ", search: "Search (e.g. YRW)", noStorage: "Warning: this browser is not saving the data. Export before closing.",
     csvCode: "Colour Code", csvQty: "Quantity", csvLast: "Last scan", csvWhen: "Date/time", csvOp: "Operation",
     opAdd: "add", opSet: "replace", opRemove: "remove", fileInv: "colour-code-inventory", fileLog: "colour-code-scans",
-    exportFail: "Could not save the file."
+    exportFail: "Could not save the file.",
+    odIn: "OneDrive: sign in", odOut: "OneDrive: connected", odOutConfirm: "Tap again to sign out of OneDrive",
+    odHint: "On a PC or phone, open this address and enter the code:", odWait: "Waiting for sign-in…",
+    odSigned: "OneDrive connected.", odSignedOut: "Signed out of OneDrive.", odSending: "Sending to OneDrive…",
+    odSent: "Sent: ", odError: "OneDrive: "
   }
 };
 
@@ -173,7 +196,7 @@ const STORE = "colour-code-inventory-v1";
 const $ = id => document.getElementById(id);
 let lang = "pt";
 let state = { counts: {}, log: [] };   // counts: code -> { q, t }
-let mode = "scan";                     // scan | qty | picker | labels
+let mode = "scan";                     // scan | qty | picker | od | labels
 let storageOk = true;
 
 const t = k => T[lang][k];
@@ -221,6 +244,8 @@ function render() {
   $("scan").placeholder = t("scanHint");
   $("pSearch").placeholder = t("search");
   $("bNew").textContent = t(armed ? "newInvConfirm" : "newInv");
+  $("bOd").hidden = !hasOd();
+  $("bOd").textContent = t(odSigned() ? (odArmed ? "odOutConfirm" : "odOut") : "odIn");
 
   const codes = Object.keys(state.counts);
   $("sCodes").textContent = codes.length + " / " + CODES.length;
@@ -355,6 +380,7 @@ function download(name, rows) {
     // app Android: grava na pasta Download do equipamento
     const where = Android.saveFile(file, csv);
     if (where) msg(t("exported") + where, "ok"); else msg(t("exportFail"), "err");
+    if (odSigned()) { msg(t("odSending")); Android.oneDriveUpload(file, csv); }
     return;
   }
   const a = document.createElement("a");
@@ -376,6 +402,38 @@ $("bExportLog").addEventListener("click", () => {
   state.log.forEach(l => rows.push([l.t, l.code, ops[l.op], l.q, l.total]));
   download(t("fileLog"), rows);
 });
+
+// ---- OneDrive (só na app Android; a app responde por window.onOneDrive) ----
+const hasOd = () => !!(window.Android && Android.oneDriveUpload);
+const odSigned = () => hasOd() && Android.oneDriveStatus();
+let odArmed = false, odTimer = null;
+function closeOd() { $("od").hidden = true; mode = "scan"; focusScan(); }
+window.onOneDrive = (ev, a, b) => {
+  if (ev === "code") {
+    $("odCode").textContent = a;
+    $("odUrl").textContent = b.replace(/^https?:\/\//, "");
+    mode = "od"; $("od").hidden = false;
+    return;
+  }
+  if (!$("od").hidden) closeOd();
+  render();
+  if (ev === "signedIn") msg(t("odSigned"), "ok");
+  else if (ev === "uploaded") msg(t("odSent") + a, "ok");
+  else msg(t("odError") + a, "err");
+};
+$("bOd").addEventListener("click", () => {
+  clearTimeout(odTimer);
+  if (!odSigned()) { msg(t("odWait")); Android.oneDriveSignIn(); return; }
+  if (!odArmed) {
+    odArmed = true; render();
+    odTimer = setTimeout(() => { odArmed = false; render(); }, 4000);
+    return;
+  }
+  odArmed = false;
+  Android.oneDriveSignOut();
+  render(); msg(t("odSignedOut"));
+});
+$("odCancel").addEventListener("click", () => { Android.oneDriveCancel(); closeOd(); render(); msg(t("ready")); });
 
 // ---- novo inventário (dois toques) ----
 let armed = false, armTimer = null;
