@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Inventário Colour Code</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: system-ui, "Segoe UI", Roboto, sans-serif; background: #f2f4f7; color: #16202b; font-size: 16px; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 12px 14px; background: #dfe5ec; color: #16202b; font-weight: 600; }
+  button:active { filter: brightness(.9); }
+  button.primary { background: #0b5cad; color: #fff; }
+  button.danger { background: #b3261e; color: #fff; }
+  [hidden] { display: none !important; }
+
+  #app { max-width: 520px; margin: 0 auto; padding: 0 12px 24px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; }
+  h1 { font-size: 19px; margin: 0; }
+  #lang { padding: 6px 12px; }
+  #scan { width: 100%; font-size: 20px; padding: 14px; border: 2px solid #0b5cad; border-radius: 8px; text-transform: uppercase; background: #fff; }
+  #msg { margin: 10px 0; padding: 12px; border-radius: 8px; font-size: 17px; font-weight: 600; min-height: 46px; background: #e3e8ee; }
+  #msg.ok { background: #cfe9d3; color: #0e4a1a; }
+  #msg.err { background: #f6cfcc; color: #7a120c; }
+  #warn { margin: 10px 0; padding: 10px; border-radius: 8px; background: #fff0c2; color: #5c4300; font-size: 14px; }
+  .stats { display: flex; gap: 8px; margin-bottom: 10px; }
+  .stat { flex: 1; background: #fff; border-radius: 8px; padding: 8px 12px; }
+  .stat b { display: block; font-size: 22px; }
+  .stat span { font-size: 13px; color: #55616e; }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .row button { flex: 1; }
+  h2 { font-size: 15px; margin: 16px 0 6px; color: #55616e; }
+  #list { list-style: none; margin: 0; padding: 0; }
+  #list li { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+  #list .code { flex: 1; font-weight: 600; }
+  #list .q { font-size: 20px; font-weight: 700; }
+  #empty { color: #55616e; padding: 8px 2px; }
+
+  .chips { display: inline-flex; gap: 3px; }
+  .chip { width: 18px; height: 18px; border-radius: 50%; border: 1px solid #5b6570; display: inline-block; }
+  .chip.Y { background: #f2c200; } .chip.R { background: #d32f2f; } .chip.B { background: #1565c0; }
+  .chip.G { background: #2e7d32; } .chip.W { background: #fff; }
+
+  .overlay { position: fixed; inset: 0; background: #f2f4f7; padding: 12px; overflow: auto; }
+  .panel { max-width: 520px; margin: 0 auto; }
+  #qCode { font-size: 30px; font-weight: 700; display: flex; align-items: center; gap: 12px; }
+  #qCode .chip { width: 26px; height: 26px; }
+  #qInfo { color: #55616e; margin: 4px 0 8px; min-height: 22px; }
+  #qVal { background: #fff; border: 2px solid #0b5cad; border-radius: 8px; font-size: 38px; font-weight: 700; text-align: right; padding: 6px 14px; min-height: 60px; }
+  #qVal.bad { border-color: #b3261e; background: #f6cfcc; }
+  #pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  #pad button { font-size: 26px; padding: 14px 0; background: #fff; }
+  #qBtns { display: grid; gap: 8px; }
+  #qBtns button { font-size: 18px; padding: 16px; }
+  #pSearch { width: 100%; font-size: 18px; padding: 12px; border: 2px solid #0b5cad; border-radius: 8px; text-transform: uppercase; margin: 8px 0; }
+  #pList button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: #fff; margin-bottom: 6px; }
+  #pList .done { margin-left: auto; color: #0e4a1a; }
+
+  #labels { background: #fff; padding: 10mm; }
+  #labelBar { display: flex; gap: 8px; margin-bottom: 8mm; }
+  #labelGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; }
+  .label { border: 1px dashed #999; padding: 3mm; text-align: center; break-inside: avoid; height: 34mm; }
+  .label .txt { font-size: 15pt; font-weight: 700; margin: 1mm 0 2mm; }
+  .label svg { display: block; margin: 0 auto; }
+  @media print {
+    #labelBar { display: none; }
+    #labels { padding: 0; }
+    @page { margin: 10mm; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <h1 data-t="title"></h1>
+    <button id="lang" type="button"></button>
+  </header>
+  <form id="scanForm" autocomplete="off">
+    <input id="scan" inputmode="none" autocomplete="off" autocapitalize="characters" spellcheck="false">
+  </form>
+  <div id="warn" hidden data-t="noStorage"></div>
+  <div id="msg"></div>
+  <div class="stats">
+    <div class="stat"><b id="sCodes"></b><span data-t="statCodes"></span></div>
+    <div class="stat"><b id="sUnits"></b><span data-t="statUnits"></span></div>
+  </div>
+  <div class="row"><button id="bPick" type="button" data-t="pick"></button></div>
+  <div class="row">
+    <button id="bExport" type="button" class="primary" data-t="export"></button>
+    <button id="bExportLog" type="button" data-t="exportLog"></button>
+  </div>
+  <h2 data-t="counted"></h2>
+  <div id="empty" data-t="empty"></div>
+  <ul id="list"></ul>
+  <h2 data-t="other"></h2>
+  <div class="row">
+    <button id="bLabels" type="button" data-t="labels"></button>
+    <button id="bNew" type="button" class="danger"></button>
+  </div>
+</div>
+
+<div id="qty" class="overlay" hidden>
+  <div class="panel">
+    <div id="qCode"></div>
+    <div id="qInfo"></div>
+    <div id="qVal"></div>
+    <div id="pad"></div>
+    <div id="qBtns">
+      <button id="qAdd" type="button" class="primary"></button>
+      <button id="qSet" type="button"></button>
+      <button id="qDel" type="button" class="danger" data-t="remove"></button>
+      <button id="qCancel" type="button" data-t="cancel"></button>
+    </div>
+  </div>
+</div>
+
+<div id="picker" class="overlay" hidden>
+  <div class="panel">
+    <div class="row"><button id="pClose" type="button" data-t="back"></button></div>
+    <input id="pSearch" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div id="pList"></div>
+  </div>
+</div>
+
+<div id="labels" hidden>
+  <div id="labelBar">
+    <button id="lBack" type="button" data-t="back"></button>
+    <button id="lPrint" type="button" class="primary" data-t="print"></button>
+  </div>
+  <div id="labelGrid"></div>
+</div>
+
+<script>
+// Colour Codes: separador "Bead Parts", coluna F do "All OCL Sheets PT Lookups V1.9" (119 distintos, extraídos em 2026-11-10).
+const CODES = "B;B,B;B,B,B;B,B,B,B;B,B,B,G;B,B,B,W;B,B,G;B,B,G,G;B,B,G,W;B,B,W;B,B,W,W;B,G;B,G,G;B,G,G,G;B,G,G,W;B,G,W;B,G,W,W;B,W;B,W,W;G;G,G;G,G,G;G,G,W;G,W;G,W,W;R;R,B;R,B,B;R,B,B,B;R,B,B,G;R,B,B,W;R,B,G;R,B,G,G;R,B,G,W;R,B,W;R,B,W,W;R,G;R,G,G;R,G,G,G;R,G,G,W;R,G,W;R,G,W,W;R,R;R,R,B;R,R,B,B;R,R,B,G;R,R,B,W;R,R,G;R,R,G,G;R,R,G,W;R,R,R;R,R,R,B;R,R,R,G;R,R,R,R;R,R,R,W;R,R,W;R,R,W,W;R,W;R,W,W;R,W,W,W;W;W,W;W,W,W;Y;Y,B;Y,B,B;Y,B,B,B;Y,B,B,G;Y,B,B,W;Y,B,G;Y,B,G,G;Y,B,G,W;Y,B,W;Y,B,W,W;Y,G;Y,G,G;Y,G,G,G;Y,G,G,W;Y,G,W;Y,G,W,W;Y,R;Y,R,B;Y,R,B,B;Y,R,B,G;Y,R,B,W;Y,R,G;Y,R,G,G;Y,R,G,W;Y,R,R;Y,R,R,B;Y,R,R,G;Y,R,R,R;Y,R,R,W;Y,R,W;Y,R,W,W;Y,W;Y,W,W;Y,W,W,W;Y,Y;Y,Y,B;Y,Y,B,B;Y,Y,B,G;Y,Y,B,W;Y,Y,G;Y,Y,G,G;Y,Y,G,W;Y,Y,R;Y,Y,R,B;Y,Y,R,G;Y,Y,R,R;Y,Y,R,W;Y,Y,W;Y,Y,W,W;Y,Y,Y;Y,Y,Y,B;Y,Y,Y,G;Y,Y,Y,R;Y,Y,Y,W;Y,Y,Y,Y".split(";");
+
+// O código de barras leva só as letras (Y,R,R,W -> YRRW); a leitura aceita com ou sem vírgulas.
+const keyOf = code => code.replace(/,/g, "");
+const BY_KEY = new Map(CODES.map(c => [keyOf(c), c]));
+
+const T = {
+  pt: {
+    title: "Inventário Colour Code", scanHint: "Ler código de barras…", ready: "Pronto. Leia um código de barras.",
+    statCodes: "códigos contados", statUnits: "unidades no total", pick: "Escolher da lista (sem etiqueta)",
+    export: "Exportar inventário", exportLog: "Exportar leituras", counted: "Contados", empty: "Ainda sem leituras.",
+    other: "Outras opções", labels: "Etiquetas (imprimir)", newInv: "Novo inventário", newInvConfirm: "Tocar de novo para APAGAR tudo",
+    cleared: "Inventário apagado.", unknown: "Código desconhecido: ", qtyMissing: "Indique a quantidade.",
+    add: "Somar", confirm: "Confirmar", set: "Substituir pelo valor", save: "Guardar", remove: "Remover", cancel: "Cancelar",
+    back: "Voltar", print: "Imprimir", current: "Já contado: ", notCounted: "Ainda não contado", total: "total ",
+    removed: " removido", exported: "Exportado: ", search: "Procurar (ex.: YRW)", noStorage: "Atenção: este browser não está a guardar os dados. Exporte antes de fechar.",
+    csvCode: "Colour Code", csvQty: "Quantidade", csvLast: "Ultima leitura", csvWhen: "Data/hora", csvOp: "Operacao",
+    opAdd: "somar", opSet: "substituir", opRemove: "remover", fileInv: "inventario-colour-code", fileLog: "leituras-colour-code"
+  },
+  en: {
+    title: "Colour Code Inventory", scanHint: "Scan barcode…", ready: "Ready. Scan a barcode.",
+    statCodes: "codes counted", statUnits: "units in total", pick: "Choose from list (no label)",
+    export: "Export inventory", exportLog: "Export scans", counted: "Counted", empty: "No scans yet.",
+    other: "Other options", labels: "Labels (print)", newInv: "New inventory", newInvConfirm: "Tap again to DELETE everything",
+    cleared: "Inventory cleared.", unknown: "Unknown code: ", qtyMissing: "Enter the quantity.",
+    add: "Add", confirm: "Confirm", set: "Replace with value", save: "Save", remove: "Remove", cancel: "Cancel",
+    back: "Back", print: "Print", current: "Already counted: ", notCounted: "Not counted yet", total: "total ",
+    removed: " removed", exported: "Exported: ", search: "Search (e.g. YRW)", noStorage: "Warning: this browser is not saving the data. Export before closing.",
+    csvCode: "Colour Code", csvQty: "Quantity", csvLast: "Last scan", csvWhen: "Date/time", csvOp: "Operation",
+    opAdd: "add", opSet: "replace", opRemove: "remove", fileInv: "colour-code-inventory", fileLog: "colour-code-scans"
+  }
+};
+
+const STORE = "colour-code-inventory-v1";
+const $ = id => document.getElementById(id);
+let lang = "pt";
+let state = { counts: {}, log: [] };   // counts: code -> { q, t }
+let mode = "scan";                     // scan | qty | picker | labels
+let storageOk = true;
+
+const t = k => T[lang][k];
+
+function load() {
+  try {
+    lang = localStorage.getItem(STORE + "-lang") === "en" ? "en" : "pt";
+    const raw = localStorage.getItem(STORE);
+    if (raw) state = JSON.parse(raw);
+  } catch (e) { storageOk = false; }
+}
+function save() {
+  try { localStorage.setItem(STORE, JSON.stringify(state)); }
+  catch (e) { storageOk = false; }
+  $("warn").hidden = storageOk;
+}
+
+function stamp(d) {
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+}
+const chips = code => '<span class="chips">' + code.split(",").map(c => '<span class="chip ' + c + '"></span>').join("") + "</span>";
+
+function beep(ok) {
+  try {
+    beep.ctx = beep.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = beep.ctx.createOscillator(), g = beep.ctx.createGain();
+    o.frequency.value = ok ? 1200 : 220; o.type = ok ? "sine" : "square";
+    g.gain.value = 0.2; o.connect(g); g.connect(beep.ctx.destination);
+    o.start(); o.stop(beep.ctx.currentTime + (ok ? 0.08 : 0.4));
+  } catch (e) { /* sem som */ }
+  if (!ok && navigator.vibrate) navigator.vibrate(300);
+}
+function msg(text, kind) {
+  $("msg").textContent = text;
+  $("msg").className = kind || "";
+  if (kind) beep(kind === "ok");
+}
+
+function render() {
+  document.documentElement.lang = lang;
+  document.title = t("title");
+  document.querySelectorAll("[data-t]").forEach(el => { el.textContent = t(el.dataset.t); });
+  $("lang").textContent = lang === "pt" ? "EN" : "PT";
+  $("scan").placeholder = t("scanHint");
+  $("pSearch").placeholder = t("search");
+  $("bNew").textContent = t(armed ? "newInvConfirm" : "newInv");
+
+  const codes = Object.keys(state.counts);
+  $("sCodes").textContent = codes.length + " / " + CODES.length;
+  $("sUnits").textContent = codes.reduce((s, c) => s + state.counts[c].q, 0);
+  $("empty").hidden = codes.length > 0;
+  codes.sort((a, b) => state.counts[b].t.localeCompare(state.counts[a].t));
+  $("list").innerHTML = codes.map(c =>
+    '<li data-code="' + c + '">' + chips(c) + '<span class="code">' + c + '</span><span class="q">' + state.counts[c].q + "</span></li>").join("");
+}
+
+// ---- leitura ----
+let idle = null;
+function focusScan() {
+  if (mode === "scan" || mode === "qty") $("scan").focus({ preventScroll: true });
+}
+function submitScan() {
+  clearTimeout(idle);
+  const raw = $("scan").value.trim().toUpperCase();
+  $("scan").value = "";
+  if (!raw) return;
+  const code = /^[A-Z](,?[A-Z])*$/.test(raw) ? BY_KEY.get(keyOf(raw)) : null;
+  if (!code) { msg(t("unknown") + raw, "err"); return; }
+  openQty(code, false);
+}
+$("scan").addEventListener("input", () => {
+  if (mode === "qty") {
+    // teclado físico do terminal: dígitos vão para a quantidade; uma leitura a meio é ignorada
+    const digits = $("scan").value.replace(/\D/g, "");
+    $("scan").value = "";
+    for (const d of digits) qtyKey(d);
+    return;
+  }
+  // leitor sem sufixo Enter: submete quando a escrita pára
+  clearTimeout(idle);
+  if ($("scan").value.trim()) idle = setTimeout(submitScan, 500);
+});
+$("scan").addEventListener("keydown", e => {
+  if (mode === "qty" && e.key === "Backspace") { e.preventDefault(); qtyKey("back"); }
+});
+$("scanForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (mode === "qty") qtyConfirm(qEdit ? "set" : "add"); else submitScan();
+});
+$("scan").addEventListener("blur", () => setTimeout(focusScan, 50));
+document.addEventListener("click", () => setTimeout(focusScan, 0));
+
+// ---- quantidade ----
+let qCode = null, qEdit = false, qBuf = "";
+function openQty(code, edit) {
+  qCode = code; qEdit = edit; qBuf = "";
+  const cur = state.counts[code];
+  $("qCode").innerHTML = chips(code) + "<span>" + code + "</span>";
+  $("qInfo").textContent = cur ? t("current") + cur.q : t("notCounted");
+  $("qAdd").textContent = cur ? t("add") : t("confirm");
+  $("qAdd").hidden = edit;
+  $("qSet").textContent = edit ? t("save") : t("set");
+  $("qSet").className = edit ? "primary" : "";
+  $("qSet").hidden = !cur;
+  $("qDel").hidden = !edit;
+  $("picker").hidden = true;
+  $("qty").hidden = false;
+  mode = "qty";
+  showQty();
+  focusScan();
+}
+function showQty() {
+  $("qVal").textContent = qBuf;
+  $("qVal").classList.remove("bad");
+}
+function qtyKey(k) {
+  if (k === "back") qBuf = qBuf.slice(0, -1);
+  else if (qBuf.length < 6) qBuf = qBuf === "0" ? k : qBuf + k;
+  showQty();
+}
+function closeQty() {
+  $("qty").hidden = true;
+  mode = "scan";
+  render();
+  focusScan();
+}
+function qtyConfirm(op) {
+  const now = stamp(new Date());
+  if (op === "remove") {
+    delete state.counts[qCode];
+    state.log.push({ t: now, code: qCode, op: "remove", q: 0, total: 0 });
+    save(); msg(qCode + t("removed"), "ok"); closeQty();
+    return;
+  }
+  const n = parseInt(qBuf, 10);
+  // somar zero não faz sentido; substituir por zero é válido (contado, sem stock)
+  if (isNaN(n) || (op === "add" && n === 0)) {
+    $("qVal").classList.add("bad"); $("qInfo").textContent = t("qtyMissing"); beep(false);
+    return;
+  }
+  const cur = state.counts[qCode];
+  const total = op === "add" && cur ? cur.q + n : n;
+  state.counts[qCode] = { q: total, t: now };
+  state.log.push({ t: now, code: qCode, op: op, q: n, total: total });
+  save();
+  msg(qCode + ": " + (op === "add" ? "+" + n + " → " : "") + t("total") + total, "ok");
+  closeQty();
+}
+$("pad").innerHTML = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0"].map(k =>
+  '<button type="button" data-k="' + k + '">' + (k === "back" ? "⌫" : k) + "</button>").join("");
+$("pad").addEventListener("click", e => { const b = e.target.closest("button"); if (b) qtyKey(b.dataset.k); });
+$("qAdd").addEventListener("click", () => qtyConfirm("add"));
+$("qSet").addEventListener("click", () => qtyConfirm("set"));
+$("qDel").addEventListener("click", () => qtyConfirm("remove"));
+$("qCancel").addEventListener("click", () => { msg(t("ready")); closeQty(); });
+$("list").addEventListener("click", e => { const li = e.target.closest("li"); if (li) openQty(li.dataset.code, true); });
+
+// ---- escolher da lista ----
+function renderPicker() {
+  const f = keyOf($("pSearch").value.toUpperCase().replace(/[^A-Z,]/g, ""));
+  $("pList").innerHTML = CODES.filter(c => keyOf(c).startsWith(f)).map(c =>
+    '<button type="button" data-code="' + c + '">' + chips(c) + "<span>" + c + "</span>" +
+    (state.counts[c] ? '<span class="done">' + state.counts[c].q + "</span>" : "") + "</button>").join("");
+}
+$("bPick").addEventListener("click", () => {
+  mode = "picker"; $("pSearch").value = ""; renderPicker(); $("picker").hidden = false;
+});
+$("pSearch").addEventListener("input", renderPicker);
+$("pClose").addEventListener("click", () => { $("picker").hidden = true; mode = "scan"; focusScan(); });
+$("pList").addEventListener("click", e => { const b = e.target.closest("button"); if (b) openQty(b.dataset.code, false); });
+
+// ---- exportar ----
+function download(name, rows) {
+  // ; e BOM para abrir diretamente no Excel em português
+  const csv = "﻿" + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";")).join("\r\n") + "\r\n";
+  const file = name + "-" + stamp(new Date()).replace(/[: ]/g, "").replace(/-/g, "") + ".csv";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = file;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  msg(t("exported") + file, "ok");
+}
+$("bExport").addEventListener("click", () => {
+  // todos os códigos; quantidade vazia = não contado (diferente de contado com 0)
+  const rows = [[t("csvCode"), t("csvQty"), t("csvLast")]];
+  CODES.forEach(c => { const x = state.counts[c]; rows.push([c, x ? x.q : "", x ? x.t : ""]); });
+  download(t("fileInv"), rows);
+});
+$("bExportLog").addEventListener("click", () => {
+  const ops = { add: t("opAdd"), set: t("opSet"), remove: t("opRemove") };
+  const rows = [[t("csvWhen"), t("csvCode"), t("csvOp"), t("csvQty"), "Total"]];
+  state.log.forEach(l => rows.push([l.t, l.code, ops[l.op], l.q, l.total]));
+  download(t("fileLog"), rows);
+});
+
+// ---- novo inventário (dois toques) ----
+let armed = false, armTimer = null;
+$("bNew").addEventListener("click", () => {
+  clearTimeout(armTimer);
+  if (!armed) {
+    armed = true; render();
+    armTimer = setTimeout(() => { armed = false; render(); }, 4000);
+    return;
+  }
+  armed = false;
+  state = { counts: {}, log: [] };
+  save(); render(); msg(t("cleared"), "ok");
+});
+
+$("lang").addEventListener("click", () => {
+  lang = lang === "pt" ? "en" : "pt";
+  try { localStorage.setItem(STORE + "-lang", lang); } catch (e) { /* ignora */ }
+  render(); msg(t("ready"));
+});
+
+// ---- etiquetas (Code 128, conjunto B) ----
+const C128 = ("212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 " +
+  "221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 " +
+  "231113 231311 112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 " +
+  "314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 " +
+  "111242 121142 121241 114212 124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 " +
+  "114131 311141 411131 211412 211214 211232 2331112").split(" ");
+function code128(text) {
+  const vals = [104];                                  // Start B
+  for (const ch of text) vals.push(ch.charCodeAt(0) - 32);
+  vals.push(vals.reduce((s, v, i) => s + v * (i || 1), 0) % 103);
+  vals.push(106);                                      // Stop
+  return vals.map(v => C128[v]).join("");
+}
+function barcodeSvg(text) {
+  const widths = code128(text), quiet = 10;
+  let x = quiet, rects = "";
+  for (let i = 0; i < widths.length; i++) {
+    const w = +widths[i];
+    if (i % 2 === 0) rects += '<rect x="' + x + '" y="0" width="' + w + '" height="10"/>';
+    x += w;
+  }
+  const total = x + quiet;
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + total + ' 10" width="' + (total * 0.4).toFixed(1) +
+    'mm" height="14mm" preserveAspectRatio="none" shape-rendering="crispEdges">' + rects + "</svg>";
+}
+$("bLabels").addEventListener("click", () => {
+  $("labelGrid").innerHTML = CODES.map(c =>
+    '<div class="label">' + chips(c) + '<div class="txt">' + c + "</div>" + barcodeSvg(keyOf(c)) + "</div>").join("");
+  $("app").hidden = true; $("labels").hidden = false; mode = "labels";
+});
+$("lBack").addEventListener("click", () => { $("labels").hidden = true; $("app").hidden = false; mode = "scan"; focusScan(); });
+$("lPrint").addEventListener("click", () => window.print());
+
+load();
+save();
+render();
+msg(t("ready"));
+focusScan();
+</script>
+</body>
+</html>
