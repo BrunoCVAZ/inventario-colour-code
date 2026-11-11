@@ -171,7 +171,9 @@ const T = {
     odIn: "OneDrive: iniciar sessão", odOut: "OneDrive: ligado", odOutConfirm: "Tocar de novo para terminar a sessão OneDrive",
     odHint: "Num PC ou telemóvel, abra este endereço e escreva o código:", odWait: "A aguardar o início de sessão…",
     odSigned: "OneDrive ligado.", odSignedOut: "Sessão OneDrive terminada.", odSending: "A enviar para o OneDrive…",
-    odSent: "Enviado: ", odError: "OneDrive: "
+    odSent: "Enviado: ", odError: "OneDrive: ",
+    odPlan: "Enviado. Necessidades de talões atualizadas no OneDrive.",
+    odPlanMissing: "Enviado. Falta o ficheiro Necessidades de taloes.xlsx na pasta do OneDrive."
   },
   en: {
     title: "Colour Code Inventory", scanHint: "Scan barcode…", ready: "Ready. Scan a barcode.",
@@ -188,7 +190,9 @@ const T = {
     odIn: "OneDrive: sign in", odOut: "OneDrive: connected", odOutConfirm: "Tap again to sign out of OneDrive",
     odHint: "On a PC or phone, open this address and enter the code:", odWait: "Waiting for sign-in…",
     odSigned: "OneDrive connected.", odSignedOut: "Signed out of OneDrive.", odSending: "Sending to OneDrive…",
-    odSent: "Sent: ", odError: "OneDrive: "
+    odSent: "Sent: ", odError: "OneDrive: ",
+    odPlan: "Sent. Bead requirements updated in OneDrive.",
+    odPlanMissing: "Sent. The file Necessidades de taloes.xlsx is missing from the OneDrive folder."
   }
 };
 
@@ -472,6 +476,8 @@ $("bExport").addEventListener("click", () => {
   const rows = [[t("csvCode"), t("csvQty"), t("csvLast")]];
   CODES.forEach(c => { const x = state.counts[c]; rows.push([c, x ? x.q : "", x ? x.t : ""]); });
   download(t("fileInv"), rows, [16, 14, 22]);
+  // o Excel de necessidades no OneDrive fica com este inventário, sem copiar à mão
+  if (odSigned() && Android.oneDriveUpdatePlan) Android.oneDriveUpdatePlan(JSON.stringify(rows));
 });
 $("bExportLog").addEventListener("click", () => {
   const ops = { add: t("opAdd"), set: t("opSet"), remove: t("opRemove") };
@@ -496,6 +502,8 @@ window.onOneDrive = (ev, a, b) => {
   render();
   if (ev === "signedIn") msg(t("odSigned"), "ok");
   else if (ev === "uploaded") msg(t("odSent") + a, "ok");
+  else if (ev === "planUpdated") msg(t("odPlan"), "ok");
+  else if (ev === "planMissing") msg(t("odPlanMissing"));
   else msg(t("odError") + a, "err");
 };
 $("bOd").addEventListener("click", () => {

@@ -14,6 +14,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -22,6 +23,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.ProtocolException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -40,6 +42,9 @@ public class MainActivity extends Activity {
     private static final String SCOPE = "Files.ReadWrite offline_access";
     private static final String LOGIN = "https://login.microsoftonline.com/" + TENANT + "/oauth2/v2.0/";
     private static final String ONEDRIVE_FOLDER = "Inventario Colour Code";
+    // Excel de necessidades guardado na mesma pasta; a app só escreve na folha do inventário.
+    private static final String PLAN_FILE = "Necessidades de taloes.xlsx";
+    private static final String PLAN_SHEET = "Inventario";
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile int signInAttempt = 0;
@@ -160,48 +165,96 @@ public class MainActivity extends Activity {
         });
     }
 
+    private static String folderUrl() {
+        return "https://graph.microsoft.com/v1.0/me/drive/root:/" + Uri.encode(ONEDRIVE_FOLDER) + "/";
+    }
+
+    /** Token de acesso a partir da sessão guardada; se não for possível avisa a página e devolve null. */
+    private String accessToken() throws Exception {
+        String refresh = prefs().getString("refresh", null);
+        if (refresh == null) {
+            notifyPage("error", "sign-in required");
+            return null;
+        }
+        JSONObject tok = postForm(LOGIN + "token",
+            "grant_type", "refresh_token",
+            "client_id", CLIENT_ID,
+            "refresh_token", refresh,
+            "scope", SCOPE);
+        if (!tok.has("access_token")) {
+            // sessão revogada ou expirada: obriga a novo início de sessão
+            if ("invalid_grant".equals(tok.optString("error"))) saveToken(null);
+            notifyPage("error", loginError(tok));
+            return null;
+        }
+        if (tok.has("refresh_token")) saveToken(tok.getString("refresh_token"));
+        return tok.getString("access_token");
+    }
+
+    private static String graphError(int code, String body) {
+        try {
+            JSONObject err = new JSONObject(body).optJSONObject("error");
+            if (err != null) return err.optString("message", "HTTP " + code);
+        } catch (Exception ignored) {
+            // corpo sem JSON
+        }
+        return "HTTP " + code;
+    }
+
+    private static HttpURLConnection send(String method, String url, String token, String contentType, byte[] body) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(60000);
+        try {
+            c.setRequestMethod(method);
+        } catch (ProtocolException e) {
+            // implementações sem PATCH: o Graph aceita o método no cabeçalho
+            c.setRequestMethod("POST");
+            c.setRequestProperty("X-HTTP-Method-Override", method);
+        }
+        c.setDoOutput(true);
+        c.setRequestProperty("Authorization", "Bearer " + token);
+        c.setRequestProperty("Content-Type", contentType);
+        try (OutputStream out = c.getOutputStream()) {
+            out.write(body);
+        }
+        return c;
+    }
+
     private void upload(String name, String content) {
         worker.execute(() -> {
             try {
-                String refresh = prefs().getString("refresh", null);
-                if (refresh == null) {
-                    notifyPage("error", "sign-in required");
-                    return;
-                }
-                JSONObject tok = postForm(LOGIN + "token",
-                    "grant_type", "refresh_token",
-                    "client_id", CLIENT_ID,
-                    "refresh_token", refresh,
-                    "scope", SCOPE);
-                if (!tok.has("access_token")) {
-                    // sessão revogada ou expirada: obriga a novo início de sessão
-                    if ("invalid_grant".equals(tok.optString("error"))) saveToken(null);
-                    notifyPage("error", loginError(tok));
-                    return;
-                }
-                if (tok.has("refresh_token")) saveToken(tok.getString("refresh_token"));
-
+                String token = accessToken();
+                if (token == null) return;
                 String safe = sanitize(name);
-                String url = "https://graph.microsoft.com/v1.0/me/drive/root:/"
-                    + Uri.encode(ONEDRIVE_FOLDER) + "/" + Uri.encode(safe) + ":/content";
-                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                c.setConnectTimeout(15000);
-                c.setReadTimeout(60000);
-                c.setRequestMethod("PUT");
-                c.setDoOutput(true);
-                c.setRequestProperty("Authorization", "Bearer " + tok.getString("access_token"));
-                c.setRequestProperty("Content-Type", "application/octet-stream");
-                try (OutputStream out = c.getOutputStream()) {
-                    out.write(Base64.decode(content, Base64.DEFAULT));
-                }
+                HttpURLConnection c = send("PUT", folderUrl() + Uri.encode(safe) + ":/content", token,
+                    "application/octet-stream", Base64.decode(content, Base64.DEFAULT));
                 int code = c.getResponseCode();
                 String body = readAll(c);
-                if (code >= 200 && code < 300) {
-                    notifyPage("uploaded", "OneDrive/" + ONEDRIVE_FOLDER + "/" + safe);
-                } else {
-                    JSONObject err = new JSONObject(body).optJSONObject("error");
-                    notifyPage("error", err != null ? err.optString("message", "HTTP " + code) : "HTTP " + code);
-                }
+                if (code >= 200 && code < 300) notifyPage("uploaded", "OneDrive/" + ONEDRIVE_FOLDER + "/" + safe);
+                else notifyPage("error", graphError(code, body));
+            } catch (Exception e) {
+                notifyPage("error", String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    /** Escreve as linhas do inventário (JSON: lista de linhas) na folha Inventario do Excel de necessidades. */
+    private void updatePlan(String rowsJson) {
+        worker.execute(() -> {
+            try {
+                JSONArray rows = new JSONArray(rowsJson);
+                String token = accessToken();
+                if (token == null) return;
+                String url = folderUrl() + Uri.encode(PLAN_FILE) + ":/workbook/worksheets/" + PLAN_SHEET
+                    + "/range(address='A1:C" + rows.length() + "')";
+                byte[] body = new JSONObject().put("values", rows).toString().getBytes(StandardCharsets.UTF_8);
+                HttpURLConnection c = send("PATCH", url, token, "application/json", body);
+                int code = c.getResponseCode();
+                String text = readAll(c);
+                if (code >= 200 && code < 300) notifyPage("planUpdated");
+                else if (code == 404) notifyPage("planMissing");
+                else notifyPage("error", graphError(code, text));
             } catch (Exception e) {
                 notifyPage("error", String.valueOf(e.getMessage()));
             }
@@ -259,6 +312,12 @@ public class MainActivity extends Activity {
         public void oneDriveSignOut() {
             signInAttempt++;
             saveToken(null);
+        }
+
+        /** O resultado chega à página por window.onOneDrive("planUpdated" | "planMissing" | "error", texto). */
+        @JavascriptInterface
+        public void oneDriveUpdatePlan(String rowsJson) {
+            updatePlan(rowsJson);
         }
 
         /** O resultado chega à página por window.onOneDrive("uploaded" | "error", texto). */
