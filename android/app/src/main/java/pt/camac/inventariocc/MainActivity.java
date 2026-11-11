@@ -29,7 +29,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,6 +50,8 @@ public class MainActivity extends Activity {
     // Excel de necessidades guardado na mesma pasta; a app só escreve na folha do inventário.
     private static final String PLAN_FILE = "Necessidades de taloes.xlsx";
     private static final String PLAN_SHEET = "Inventario";
+    // linhas (com cabeçalho) que a app gere nas folhas em que cada código mantém a sua linha
+    private static final int KEEP_ROWS = 501;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile int signInAttempt = 0;
@@ -224,6 +228,45 @@ public class MainActivity extends Activity {
         return c;
     }
 
+    private static HttpURLConnection get(String url, String token) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(60000);
+        c.setRequestProperty("Authorization", "Bearer " + token);
+        return c;
+    }
+
+    /**
+     * Junta as linhas novas às que já estão na folha sem mudar nenhum código de linha:
+     * quem já lá está fica onde está (quantidade vazia se deixou de ser contado) e os novos ocupam linhas livres.
+     */
+    private static JSONArray keepRows(JSONArray existing, JSONArray fresh) throws Exception {
+        Map<String, JSONArray> byCode = new LinkedHashMap<>();
+        for (int i = 1; i < fresh.length(); i++) {
+            JSONArray row = fresh.getJSONArray(i);
+            byCode.put(row.getString(0), row);
+        }
+        JSONArray out = new JSONArray();
+        out.put(fresh.getJSONArray(0));
+        List<Integer> free = new ArrayList<>();
+        for (int i = 1; i < KEEP_ROWS; i++) {
+            String code = i < existing.length() ? existing.getJSONArray(i).optString(0, "").trim() : "";
+            if (code.isEmpty()) {
+                out.put(new JSONArray().put("").put("").put(""));
+                free.add(i);
+            } else {
+                JSONArray row = byCode.remove(code);
+                out.put(row != null ? row : new JSONArray().put(code).put("").put(""));
+            }
+        }
+        Iterator<Integer> slot = free.iterator();
+        for (JSONArray row : byCode.values()) {
+            if (!slot.hasNext()) break;
+            out.put(slot.next(), row);
+        }
+        return out;
+    }
+
     private void upload(String name, String content) {
         worker.execute(() -> {
             try {
@@ -257,8 +300,23 @@ public class MainActivity extends Activity {
                     String sheet = it.next();
                     if (!sheet.matches("[A-Za-z]+")) continue;
                     JSONArray rows = sheets.getJSONArray(sheet);
-                    String url = folderUrl() + Uri.encode(PLAN_FILE) + ":/workbook/worksheets/" + sheet
-                        + "/range(address='A1:C" + rows.length() + "')";
+                    String sheetUrl = folderUrl() + Uri.encode(PLAN_FILE) + ":/workbook/worksheets/" + sheet;
+                    if (!PLAN_SHEET.equals(sheet)) {
+                        // lê os códigos que já lá estão, para não mudar nenhum de linha
+                        HttpURLConnection g = get(sheetUrl + "/range(address='A1:A" + KEEP_ROWS + "')?$select=values", token);
+                        int gCode = g.getResponseCode();
+                        String gText = readAll(g);
+                        if (gCode == 404) {
+                            missing.add(sheet);
+                            continue;
+                        }
+                        if (gCode < 200 || gCode >= 300) {
+                            notifyPage("error", graphError(gCode, gText));
+                            return;
+                        }
+                        rows = keepRows(new JSONObject(gText).getJSONArray("values"), rows);
+                    }
+                    String url = sheetUrl + "/range(address='A1:C" + rows.length() + "')";
                     byte[] body = new JSONObject().put("values", rows).toString().getBytes(StandardCharsets.UTF_8);
                     HttpURLConnection c = send("PATCH", url, token, "application/json", body);
                     int code = c.getResponseCode();

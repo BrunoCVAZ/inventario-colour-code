@@ -508,10 +508,8 @@ $("bExport").addEventListener("click", () => {
   download(t("fileInv"), [["Inventario", rows, [16, 14, 22]], ["Nucleos", cores, [16, 14, 22]]]);
   // o Excel de necessidades no OneDrive fica com este inventário, sem copiar à mão
   if (odSigned() && Android.oneDriveUpdatePlan) {
-    // a folha Nucleos vai sempre com 500 linhas, para apagar núcleos de exportações anteriores
-    const padded = cores.slice();
-    while (padded.length < 501) padded.push(["", "", ""]);
-    Android.oneDriveUpdatePlan(JSON.stringify({ Inventario: rows, Nucleos: padded }));
+    // na folha Nucleos a app mantém cada PartCode na linha onde já estava (o consumo é escrito ao lado)
+    Android.oneDriveUpdatePlan(JSON.stringify({ Inventario: rows, Nucleos: cores }));
   }
 });
 $("bExportLog").addEventListener("click", () => {
