@@ -27,6 +27,9 @@ import java.net.ProtocolException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -239,22 +242,37 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** Escreve as linhas do inventário (JSON: lista de linhas) na folha Inventario do Excel de necessidades. */
-    private void updatePlan(String rowsJson) {
+    /**
+     * Escreve cada folha do JSON ({"Inventario": linhas, "Nucleos": linhas}) no Excel de necessidades,
+     * a partir de A1. A app só toca nessas folhas.
+     */
+    private void updatePlan(String sheetsJson) {
         worker.execute(() -> {
             try {
-                JSONArray rows = new JSONArray(rowsJson);
+                JSONObject sheets = new JSONObject(sheetsJson);
                 String token = accessToken();
                 if (token == null) return;
-                String url = folderUrl() + Uri.encode(PLAN_FILE) + ":/workbook/worksheets/" + PLAN_SHEET
-                    + "/range(address='A1:C" + rows.length() + "')";
-                byte[] body = new JSONObject().put("values", rows).toString().getBytes(StandardCharsets.UTF_8);
-                HttpURLConnection c = send("PATCH", url, token, "application/json", body);
-                int code = c.getResponseCode();
-                String text = readAll(c);
-                if (code >= 200 && code < 300) notifyPage("planUpdated");
-                else if (code == 404) notifyPage("planMissing");
-                else notifyPage("error", graphError(code, text));
+                List<String> missing = new ArrayList<>();
+                for (Iterator<String> it = sheets.keys(); it.hasNext(); ) {
+                    String sheet = it.next();
+                    if (!sheet.matches("[A-Za-z]+")) continue;
+                    JSONArray rows = sheets.getJSONArray(sheet);
+                    String url = folderUrl() + Uri.encode(PLAN_FILE) + ":/workbook/worksheets/" + sheet
+                        + "/range(address='A1:C" + rows.length() + "')";
+                    byte[] body = new JSONObject().put("values", rows).toString().getBytes(StandardCharsets.UTF_8);
+                    HttpURLConnection c = send("PATCH", url, token, "application/json", body);
+                    int code = c.getResponseCode();
+                    String text = readAll(c);
+                    if (code == 404) {
+                        missing.add(sheet);
+                    } else if (code < 200 || code >= 300) {
+                        notifyPage("error", graphError(code, text));
+                        return;
+                    }
+                }
+                if (missing.isEmpty()) notifyPage("planUpdated");
+                else if (missing.contains(PLAN_SHEET)) notifyPage("planMissing");
+                else notifyPage("planNoSheet", String.join(", ", missing));
             } catch (Exception e) {
                 notifyPage("error", String.valueOf(e.getMessage()));
             }
@@ -314,10 +332,10 @@ public class MainActivity extends Activity {
             saveToken(null);
         }
 
-        /** O resultado chega à página por window.onOneDrive("planUpdated" | "planMissing" | "error", texto). */
+        /** O resultado chega à página por window.onOneDrive("planUpdated" | "planMissing" | "planNoSheet" | "error", texto). */
         @JavascriptInterface
-        public void oneDriveUpdatePlan(String rowsJson) {
-            updatePlan(rowsJson);
+        public void oneDriveUpdatePlan(String sheetsJson) {
+            updatePlan(sheetsJson);
         }
 
         /** O resultado chega à página por window.onOneDrive("uploaded" | "error", texto). */
