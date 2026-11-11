@@ -372,19 +372,96 @@ $("pClose").addEventListener("click", () => { $("picker").hidden = true; mode = 
 $("pList").addEventListener("click", e => { const b = e.target.closest("button"); if (b) openQty(b.dataset.code, false); });
 
 // ---- exportar ----
-function download(name, rows) {
-  // ; e BOM para abrir diretamente no Excel em português
-  const csv = "﻿" + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";")).join("\r\n") + "\r\n";
-  const file = name + "-" + stamp(new Date()).replace(/[: ]/g, "").replace(/-/g, "") + ".csv";
+// Ficheiro Excel mínimo: um zip sem compressão com o XML de um livro de uma folha.
+const CRC_TABLE = (() => {
+  const table = [];
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zip(files) {
+  const enc = new TextEncoder();
+  const u16 = n => [n & 255, (n >>> 8) & 255];
+  const u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const local = [], central = [];
+  let offset = 0;
+  for (const [name, text] of files) {
+    const nm = enc.encode(name), data = enc.encode(text);
+    // versão, flags, método 0 (sem compressão), hora, data, crc, tamanhos, comprimento do nome, extra
+    const head = [...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc32(data)),
+      ...u32(data.length), ...u32(data.length), ...u16(nm.length), ...u16(0)];
+    local.push(new Uint8Array([0x50, 0x4B, 3, 4, ...head]), nm, data);
+    central.push(new Uint8Array([0x50, 0x4B, 1, 2, ...u16(20), ...head, ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), nm);
+    offset += 30 + nm.length + data.length;
+  }
+  const centralSize = central.reduce((s, p) => s + p.length, 0);
+  const tail = new Uint8Array([0x50, 0x4B, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length),
+    ...u32(centralSize), ...u32(offset), ...u16(0)]);
+  const out = new Uint8Array(offset + centralSize + tail.length);
+  let p = 0;
+  for (const part of [...local, ...central, tail]) { out.set(part, p); p += part.length; }
+  return out;
+}
+function xlsx(rows, widths) {
+  const esc = v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  const rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const sheet = rows.map((row, r) => '<row r="' + (r + 1) + '">' + row.map((v, c) => {
+    const ref = ' r="' + "ABCDEFGH"[c] + (r + 1) + '"' + (r === 0 ? ' s="1"' : "");   // 1.ª linha a negrito
+    if (v === "") return "";
+    return typeof v === "number" ? "<c" + ref + "><v>" + v + "</v></c>"
+      : "<c" + ref + ' t="inlineStr"><is><t>' + esc(v) + "</t></is></c>";
+  }).join("") + "</row>").join("");
+  return zip([
+    ["[Content_Types].xml", head + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+    ["_rels/.rels", head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="' + rel + '/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+    ["xl/workbook.xml", head + "<workbook " + ns + ' xmlns:r="' + rel + '"><sheets>' +
+      '<sheet name="Inventario" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+    ["xl/_rels/workbook.xml.rels", head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="' + rel + '/worksheet" Target="worksheets/sheet1.xml"/>' +
+      '<Relationship Id="rId2" Type="' + rel + '/styles" Target="styles.xml"/></Relationships>'],
+    ["xl/styles.xml", head + "<styleSheet " + ns + '><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+      '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+      '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>'],
+    ["xl/worksheets/sheet1.xml", head + "<worksheet " + ns + "><cols>" +
+      widths.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join("") +
+      "</cols><sheetData>" + sheet + "</sheetData></worksheet>"]
+  ]);
+}
+function download(name, rows, widths) {
+  const file = name + "-" + stamp(new Date()).replace(/[: ]/g, "").replace(/-/g, "") + ".xlsx";
+  const bytes = xlsx(rows, widths);
   if (window.Android && Android.saveFile) {
-    // app Android: grava na pasta Download do equipamento
-    const where = Android.saveFile(file, csv);
+    // app Android: grava na pasta Download do equipamento; o conteúdo segue em base64
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const b64 = btoa(bin);
+    const where = Android.saveFile(file, b64);
     if (where) msg(t("exported") + where, "ok"); else msg(t("exportFail"), "err");
-    if (odSigned()) { msg(t("odSending")); Android.oneDriveUpload(file, csv); }
+    if (odSigned()) { msg(t("odSending")); Android.oneDriveUpload(file, b64); }
     return;
   }
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.href = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   a.download = file;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
@@ -394,13 +471,13 @@ $("bExport").addEventListener("click", () => {
   // todos os códigos; quantidade vazia = não contado (diferente de contado com 0)
   const rows = [[t("csvCode"), t("csvQty"), t("csvLast")]];
   CODES.forEach(c => { const x = state.counts[c]; rows.push([c, x ? x.q : "", x ? x.t : ""]); });
-  download(t("fileInv"), rows);
+  download(t("fileInv"), rows, [16, 14, 22]);
 });
 $("bExportLog").addEventListener("click", () => {
   const ops = { add: t("opAdd"), set: t("opSet"), remove: t("opRemove") };
   const rows = [[t("csvWhen"), t("csvCode"), t("csvOp"), t("csvQty"), "Total"]];
   state.log.forEach(l => rows.push([l.t, l.code, ops[l.op], l.q, l.total]));
-  download(t("fileLog"), rows);
+  download(t("fileLog"), rows, [22, 16, 14, 14, 10]);
 });
 
 // ---- OneDrive (só na app Android; a app responde por window.onOneDrive) ----

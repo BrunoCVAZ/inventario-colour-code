@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -189,9 +190,9 @@ public class MainActivity extends Activity {
                 c.setRequestMethod("PUT");
                 c.setDoOutput(true);
                 c.setRequestProperty("Authorization", "Bearer " + tok.getString("access_token"));
-                c.setRequestProperty("Content-Type", "text/csv");
+                c.setRequestProperty("Content-Type", "application/octet-stream");
                 try (OutputStream out = c.getOutputStream()) {
-                    out.write(content.getBytes(StandardCharsets.UTF_8));
+                    out.write(Base64.decode(content, Base64.DEFAULT));
                 }
                 int code = c.getResponseCode();
                 String body = readAll(c);
@@ -208,16 +209,16 @@ public class MainActivity extends Activity {
     }
 
     private class Bridge {
-        /** Grava o ficheiro e devolve onde ficou; devolve "" se falhar. */
+        /** Grava o ficheiro (conteúdo em base64) e devolve onde ficou; devolve "" se falhar. */
         @JavascriptInterface
         public String saveFile(String name, String content) {
             try {
                 String safe = sanitize(name);
-                byte[] data = content.getBytes(StandardCharsets.UTF_8);
+                byte[] data = Base64.decode(content, Base64.DEFAULT);
                 if (Build.VERSION.SDK_INT >= 29) {
                     ContentValues values = new ContentValues();
                     values.put(MediaStore.Downloads.DISPLAY_NAME, safe);
-                    values.put(MediaStore.Downloads.MIME_TYPE, "text/csv");
+                    values.put(MediaStore.Downloads.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
                     values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER);
                     Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
                     if (uri == null) return "";
