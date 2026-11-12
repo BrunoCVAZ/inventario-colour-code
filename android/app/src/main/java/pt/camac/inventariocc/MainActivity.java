@@ -47,9 +47,10 @@ public class MainActivity extends Activity {
     private static final String SCOPE = "Files.ReadWrite offline_access";
     private static final String LOGIN = "https://login.microsoftonline.com/" + TENANT + "/oauth2/v2.0/";
     private static final String ONEDRIVE_FOLDER = "Inventario Colour Code";
-    // Excel de necessidades guardado na mesma pasta; a app só escreve na folha do inventário.
+    // Excel de necessidades guardado na mesma pasta. A app escreve as colunas A:C de duas folhas:
+    // "Nucleo" (Colour Code, linhas fixas, reescrita) e "Talao" (PartCode, cada código mantém a sua linha).
     private static final String PLAN_FILE = "Necessidades de taloes.xlsx";
-    private static final String PLAN_SHEET = "Inventario";
+    private static final String PLAN_SHEET = "Nucleo";
     // linhas (com cabeçalho) que a app gere nas folhas em que cada código mantém a sua linha
     private static final int KEEP_ROWS = 501;
 
@@ -286,7 +287,7 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Escreve cada folha do JSON ({"Inventario": linhas, "Nucleos": linhas}) no Excel de necessidades,
+     * Escreve cada folha do JSON ({"Nucleo": linhas, "Talao": linhas}) no Excel de necessidades,
      * a partir de A1. A app só toca nessas folhas.
      */
     private void updatePlan(String sheetsJson) {

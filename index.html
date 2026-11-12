@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Inventário Colour Code</title>
+<title>Inventário de Núcleos e Talões</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -89,7 +89,7 @@
   <div id="msg"></div>
   <div class="stats">
     <div class="stat"><b id="sCodes"></b><span id="sCodesL"></span></div>
-    <div class="stat"><b id="sCores"></b><span id="sCoresL"></span></div>
+    <div class="stat"><b id="sParts"></b><span id="sPartsL"></span></div>
   </div>
   <div class="row"><button id="bPick" type="button" data-t="pick"></button></div>
   <div class="row">
@@ -156,9 +156,10 @@ const CODES = "B;B,B;B,B,B;B,B,B,B;B,B,B,G;B,B,B,W;B,B,G;B,B,G,G;B,B,G,W;B,B,W;B
 const keyOf = code => code.replace(/,/g, "");
 const BY_KEY = new Map(CODES.map(c => [keyOf(c), c]));
 
-// Núcleos: contam-se pelo PartCode do Bead Parts (B17/369 ou 10.05). Valida-se só o formato;
-// um PartCode tem sempre algarismos e um Colour Code nunca, por isso distinguem-se sozinhos.
-const isCore = code => /\d/.test(code);
+// Contam-se duas coisas: núcleos, pelo Colour Code, e talões, pelo PartCode do Bead Parts (B17/369 ou 10.05).
+// Os núcleos originam os talões. Do PartCode valida-se só o formato; tem sempre algarismos e um
+// Colour Code nunca, por isso distinguem-se sozinhos.
+const isPart = code => /\d/.test(code);
 function parseCode(raw) {
   const s = raw.trim().toUpperCase().replace(/\s+/g, "");
   if (/^[A-Z](,?[A-Z])*$/.test(s)) return BY_KEY.get(keyOf(s)) || null;
@@ -168,8 +169,8 @@ function parseCode(raw) {
 
 const T = {
   pt: {
-    title: "Inventário Colour Code", scanHint: "Ler código de barras…", ready: "Pronto. Leia um código de barras.",
-    statCodes: "talões (Colour Code)", statCores: "núcleos (PartCode)", un: "un.", core: "Núcleo", pick: "Escolher da lista (sem etiqueta)",
+    title: "Inventário de Núcleos e Talões", scanHint: "Ler código de barras…", ready: "Pronto. Leia um código de barras.",
+    statCodes: "núcleos (Colour Code)", statParts: "talões (PartCode)", un: "un.", partTag: "Talão", pick: "Escolher da lista (sem etiqueta)",
     export: "Exportar inventário", exportLog: "Exportar leituras", counted: "Contados", empty: "Ainda sem leituras.",
     other: "Outras opções", labels: "Etiquetas (imprimir)", newInv: "Novo inventário", newInvConfirm: "Tocar de novo para APAGAR tudo",
     cleared: "Inventário apagado.", unknown: "Código desconhecido: ", qtyMissing: "Indique a quantidade.",
@@ -183,13 +184,13 @@ const T = {
     odHint: "Num PC ou telemóvel, abra este endereço e escreva o código:", odWait: "A aguardar o início de sessão…",
     odSigned: "OneDrive ligado.", odSignedOut: "Sessão OneDrive terminada.", odSending: "A enviar para o OneDrive…",
     odSent: "Enviado: ", odError: "OneDrive: ",
-    odPlan: "Enviado. Necessidades de talões atualizadas no OneDrive.",
+    odPlan: "Enviado. Excel de necessidades atualizado no OneDrive.",
     odPlanMissing: "Enviado. Falta o ficheiro Necessidades de taloes.xlsx na pasta do OneDrive.",
     odPlanNoSheet: "Enviado. No Excel de necessidades falta a folha: "
   },
   en: {
-    title: "Colour Code Inventory", scanHint: "Scan barcode…", ready: "Ready. Scan a barcode.",
-    statCodes: "beads (Colour Code)", statCores: "cores (PartCode)", un: "pcs", core: "Core", pick: "Choose from list (no label)",
+    title: "Core and Bead Inventory", scanHint: "Scan barcode…", ready: "Ready. Scan a barcode.",
+    statCodes: "cores (Colour Code)", statParts: "beads (PartCode)", un: "pcs", partTag: "Bead", pick: "Choose from list (no label)",
     export: "Export inventory", exportLog: "Export scans", counted: "Counted", empty: "No scans yet.",
     other: "Other options", labels: "Labels (print)", newInv: "New inventory", newInvConfirm: "Tap again to DELETE everything",
     cleared: "Inventory cleared.", unknown: "Unknown code: ", qtyMissing: "Enter the quantity.",
@@ -203,7 +204,7 @@ const T = {
     odHint: "On a PC or phone, open this address and enter the code:", odWait: "Waiting for sign-in…",
     odSigned: "OneDrive connected.", odSignedOut: "Signed out of OneDrive.", odSending: "Sending to OneDrive…",
     odSent: "Sent: ", odError: "OneDrive: ",
-    odPlan: "Sent. Bead requirements updated in OneDrive.",
+    odPlan: "Sent. Requirements workbook updated in OneDrive.",
     odPlanMissing: "Sent. The file Necessidades de taloes.xlsx is missing from the OneDrive folder.",
     odPlanNoSheet: "Sent. The requirements workbook is missing the sheet: "
   }
@@ -235,7 +236,7 @@ function stamp(d) {
   const p = n => String(n).padStart(2, "0");
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
 }
-const chips = code => isCore(code) ? '<span class="tag">' + t("core") + "</span>" : '<span class="chips">' + code.split(",").map(c => '<span class="chip ' + c + '"></span>').join("") + "</span>";
+const chips = code => isPart(code) ? '<span class="tag">' + t("partTag") + "</span>" : '<span class="chips">' + code.split(",").map(c => '<span class="chip ' + c + '"></span>').join("") + "</span>";
 
 function beep(ok) {
   try {
@@ -266,11 +267,11 @@ function render() {
 
   const codes = Object.keys(state.counts);
   const units = list => list.reduce((s, c) => s + state.counts[c].q, 0);
-  const beads = codes.filter(c => !isCore(c)), cores = codes.filter(isCore);
-  $("sCodes").textContent = beads.length + " / " + CODES.length;
-  $("sCodesL").textContent = t("statCodes") + " · " + units(beads) + " " + t("un");
-  $("sCores").textContent = cores.length;
-  $("sCoresL").textContent = t("statCores") + " · " + units(cores) + " " + t("un");
+  const cores = codes.filter(c => !isPart(c)), parts = codes.filter(isPart);
+  $("sCodes").textContent = cores.length + " / " + CODES.length;
+  $("sCodesL").textContent = t("statCodes") + " · " + units(cores) + " " + t("un");
+  $("sParts").textContent = parts.length;
+  $("sPartsL").textContent = t("statParts") + " · " + units(parts) + " " + t("un");
   $("empty").hidden = codes.length > 0;
   codes.sort((a, b) => state.counts[b].t.localeCompare(state.counts[a].t));
   $("list").innerHTML = codes.map(c =>
@@ -380,12 +381,12 @@ $("list").addEventListener("click", e => { const li = e.target.closest("li"); if
 
 // ---- escolher da lista ----
 function renderPicker() {
-  // com algarismos é um PartCode de núcleo: só aparece quando o formato está completo
+  // com algarismos é um PartCode de talão: só aparece quando o formato está completo
   const typed = $("pSearch").value;
   if (/\d/.test(typed)) {
-    const core = parseCode(typed);
-    $("pList").innerHTML = core ? '<button type="button" data-code="' + core + '">' + chips(core) + "<span>" + core + "</span>" +
-      (state.counts[core] ? '<span class="done">' + state.counts[core].q + "</span>" : "") + "</button>" : "";
+    const part = parseCode(typed);
+    $("pList").innerHTML = part ? '<button type="button" data-code="' + part + '">' + chips(part) + "<span>" + part + "</span>" +
+      (state.counts[part] ? '<span class="done">' + state.counts[part].q + "</span>" : "") + "</button>" : "";
     return;
   }
   const f = keyOf(typed.toUpperCase().replace(/[^A-Z,]/g, ""));
@@ -499,17 +500,17 @@ function download(name, sheets) {
   msg(t("exported") + file, "ok");
 }
 $("bExport").addEventListener("click", () => {
-  // todos os códigos; quantidade vazia = não contado (diferente de contado com 0)
+  // núcleos: todos os Colour Codes; quantidade vazia = não contado (diferente de contado com 0)
   const rows = [[t("csvCode"), t("csvQty"), t("csvLast")]];
   CODES.forEach(c => { const x = state.counts[c]; rows.push([c, x ? x.q : "", x ? x.t : ""]); });
-  // núcleos: só os contados, numa folha à parte
-  const cores = [["PartCode", t("csvQty"), t("csvLast")]];
-  Object.keys(state.counts).filter(isCore).sort().forEach(c => cores.push([c, state.counts[c].q, state.counts[c].t]));
-  download(t("fileInv"), [["Inventario", rows, [16, 14, 22]], ["Nucleos", cores, [16, 14, 22]]]);
+  // talões (PartCode): só os contados, numa folha à parte
+  const parts = [["PartCode", t("csvQty"), t("csvLast")]];
+  Object.keys(state.counts).filter(isPart).sort().forEach(c => parts.push([c, state.counts[c].q, state.counts[c].t]));
+  download(t("fileInv"), [["Nucleos", rows, [16, 14, 22]], ["Taloes", parts, [16, 14, 22]]]);
   // o Excel de necessidades no OneDrive fica com este inventário, sem copiar à mão
   if (odSigned() && Android.oneDriveUpdatePlan) {
-    // na folha Nucleos a app mantém cada PartCode na linha onde já estava (o consumo é escrito ao lado)
-    Android.oneDriveUpdatePlan(JSON.stringify({ Inventario: rows, Nucleos: cores }));
+    // folhas do Excel: Nucleo (Colour Code) e Talao (PartCode); na Talao cada PartCode mantém a sua linha
+    Android.oneDriveUpdatePlan(JSON.stringify({ Nucleo: rows, Talao: parts }));
   }
 });
 $("bExportLog").addEventListener("click", () => {
